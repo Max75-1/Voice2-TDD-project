@@ -159,7 +159,7 @@ int main(void)
 
   HAL_TIM_Base_Start_IT(&htim6);
 
-  Power_On();
+  Power_On(); // Power on the SIM808 shield
 
   if( xTaskCreate(prvLEDTask, "LEDTask", configMINIMAL_STACK_SIZE, /*(void *)&LEDParam*/NULL, tskIDLE_PRIORITY, &xHandle_LED) != pdPASS){
   	  HAL_UART_Transmit(&huart2, "LEDTask creating ERROR !!!\r\n", 32, 100 );
