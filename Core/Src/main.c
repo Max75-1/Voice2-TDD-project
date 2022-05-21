@@ -54,10 +54,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 #ifndef TEST
-TIM_HandleTypeDef htim6;
-
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart1_rx;
+TIM_HandleTypeDef htim6;
 #endif
 
 //osThreadId defaultTaskHandle;
@@ -65,16 +65,17 @@ UART_HandleTypeDef huart2;
 TaskHandle_t xHandle_LED;
 TaskHandle_t xHandle_LEDToggle;
 TaskHandle_t xHandle_VoiceTask;
-/*TaskHandle_t xHandle_VoiceStopRecord;
-TaskHandle_t xHandle_VoiceStartPlay;
-TaskHandle_t xHandle_VoiceStopPlay;*/
+
+uint8_t UART1_RxBuf[40];
+uint8_t MainBuf[40];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM6_Init(void);
 static void MX_USART1_UART_Init(void);
 void StartDefaultTask(void const * argument);
 
@@ -117,8 +118,8 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
-  MX_TIM6_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
@@ -165,7 +166,7 @@ int main(void)
   	  HAL_UART_Transmit(&huart2, "LEDTask creating ERROR !!!\r\n", 32, 100 );
   }
 
-  if( xTaskCreate(prvLEDToggleTask, "LEDTask", configMINIMAL_STACK_SIZE, /*(void *)&LEDParam*/NULL, tskIDLE_PRIORITY, &xHandle_LEDToggle) != pdPASS){
+  if( xTaskCreate(prvLEDToggleTask, "LEDToggleTask", configMINIMAL_STACK_SIZE, /*(void *)&LEDParam*/NULL, tskIDLE_PRIORITY, &xHandle_LEDToggle) != pdPASS){
       HAL_UART_Transmit(&huart2, "LEDToggleTask creating ERROR !!!\r\n", 32, 100 );
   }
 
@@ -239,44 +240,6 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief TIM6 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM6_Init(void)
-{
-
-  /* USER CODE BEGIN TIM6_Init 0 */
-
-  /* USER CODE END TIM6_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM6_Init 1 */
-
-  /* USER CODE END TIM6_Init 1 */
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 0;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 31999;
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM6_Init 2 */
-
-  /* USER CODE END TIM6_Init 2 */
-
-}
-
-/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -343,6 +306,22 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -368,13 +347,82 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : PB13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 13, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
 /* USER CODE BEGIN 4 */
+
+static uint8_t oldPos=0, newPos=0;
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+
+	if (huart->Instance == USART1)
+	{
+		uint8_t MainBuf_SIZE=sizeof(MainBuf);
+		oldPos = newPos;  // Update the last position before copying new data
+
+		/* If the data in large and it is about to exceed the buffer size, we have to route it to the start of the buffer
+		 * This is to maintain the circular buffer
+		 * The old data in the main buffer will be overlapped
+		 */
+		if (oldPos+(uint8_t)Size > MainBuf_SIZE)  // If the current position + new data size is greater than the main buffer
+		{
+			uint8_t datatocopy = MainBuf_SIZE-oldPos;  // find out how much space is left in the main buffer
+			memcpy ((uint8_t *)MainBuf+oldPos, UART1_RxBuf, datatocopy);  // copy data in that remaining space
+
+			oldPos = 0;  // point to the start of the buffer
+			memcpy ((uint8_t *)MainBuf, (uint8_t *)UART1_RxBuf+datatocopy, (Size-datatocopy));  // copy the remaining data
+			newPos = (Size-datatocopy);
+		}
+
+		/* if the current position + new data size is less than the main buffer
+		 * we will simply copy the data into the buffer and update the position
+		*/
+		else
+		{
+			memcpy ((uint8_t *)MainBuf+oldPos, UART1_RxBuf, Size);
+			newPos = Size+oldPos;
+		}
+
+
+		/* start the DMA again */
+		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *) UART1_RxBuf, sizeof(UART1_RxBuf));
+		__HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
+	}
+}
+
+//extern TaskHandle_t xHandle_LED;
+static uint32_t PrevTimer=0, Timer;
+static GPIO_PinState ButtonState=GPIO_PIN_RESET;
+static BaseType_t checkIfYieldRequired=pdFALSE;
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	if(GPIO_Pin==GPIO_PIN_13){
+		if(PrevTimer==0 && ButtonState==GPIO_PIN_RESET){
+			PrevTimer=Timer=HAL_GetTick();
+			ButtonState=GPIO_PIN_SET;
+		}
+
+		Timer=HAL_GetTick();
+
+		if((Timer-PrevTimer)>=135 && ButtonState==GPIO_PIN_SET ){
+			checkIfYieldRequired=xTaskResumeFromISR(xHandle_LED);
+			portYIELD_FROM_ISR(checkIfYieldRequired);
+
+			PrevTimer=Timer=0;
+			ButtonState=GPIO_PIN_RESET;
+		}
+	}
+}
 
 /* USER CODE END 4 */
 

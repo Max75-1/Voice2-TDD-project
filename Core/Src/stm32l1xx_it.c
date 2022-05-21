@@ -23,12 +23,7 @@
 #include "stm32l1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "LED.h"
-#include "Utils.h"
-#include "stm32l1xx_hal_uart.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,7 +43,10 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+extern DMA_HandleTypeDef hdma_usart1_rx;
+extern TIM_HandleTypeDef htim3;
+extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart2;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,27 +56,14 @@
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#ifdef TEST
-int SetStateCount=0;
-TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim3;
-TaskHandle_t xHandle_LED;
-UART_HandleTypeDef huart2;
-#else
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-extern TIM_HandleTypeDef htim6;
-extern TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN EV */
-extern TaskHandle_t xHandle_LED;
-static int SetStateCount=0;
-#endif
 
 
-GPIO_PinState PrevButtonState=GPIO_PIN_RESET, ButtonState;
-BaseType_t checkIfYieldRequired=pdFALSE;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -178,6 +163,20 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles DMA1 channel5 global interrupt.
+  */
+void DMA1_Channel5_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
+
+  /* USER CODE END DMA1_Channel5_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_usart1_rx);
+  /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
+
+  /* USER CODE END DMA1_Channel5_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM3 global interrupt.
   */
 void TIM3_IRQHandler(void)
@@ -192,50 +191,45 @@ void TIM3_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles TIM6 global interrupt.
+  * @brief This function handles USART1 global interrupt.
   */
-#ifndef TEST
-void TIM6_IRQHandler(void)
-#else
-STATUS_T TIM6_IRQHandler(void)
-#endif
+void USART1_IRQHandler(void)
 {
-  /* USER CODE BEGIN TIM6_IRQn 0 */
-	ButtonState=HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_13);
-	if(PrevButtonState==GPIO_PIN_RESET){
-		if(ButtonState==GPIO_PIN_SET) SetStateCount++;
-		else SetStateCount=0;
-	}else
-		PrevButtonState=ButtonState;
-	if(SetStateCount>=20){
-		checkIfYieldRequired=xTaskResumeFromISR(xHandle_LED);
-#ifndef TEST
-		portYIELD_FROM_ISR(checkIfYieldRequired);
-#endif
+  /* USER CODE BEGIN USART1_IRQn 0 */
 
-		//LED_ToggleTwoLEDs();
-		//LED_Toggle(LED_1);
-		PrevButtonState=GPIO_PIN_SET;
-		SetStateCount=0;
-	}
+  /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
+  /* USER CODE BEGIN USART1_IRQn 1 */
 
-	/*//BaseType_t checkIfYieldRequired=pdFALSE;
+  /* USER CODE END USART1_IRQn 1 */
+}
 
-				//HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET);
+/**
+  * @brief This function handles USART2 global interrupt.
+  */
+void USART2_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART2_IRQn 0 */
 
-				//checkIfYieldRequired=xTaskResumeFromISR(xHandle_SMS);
-				//portYIELD_FROM_ISR(checkIfYieldRequired);
-			if(State==GPIO_PIN_RESET ){
-				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET);
-			}
-			//if(ButtonState!=PrevButtonState) PrevButtonState=ButtonState;*/
-  /* USER CODE END TIM6_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim6);
-  /* USER CODE BEGIN TIM6_IRQn 1 */
-#ifdef TEST
-	return STATUS_OK;
-#endif
-  /* USER CODE END TIM6_IRQn 1 */
+  /* USER CODE END USART2_IRQn 0 */
+  HAL_UART_IRQHandler(&huart2);
+  /* USER CODE BEGIN USART2_IRQn 1 */
+
+  /* USER CODE END USART2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI line[15:10] interrupts.
+  */
+void EXTI15_10_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
+
+  /* USER CODE END EXTI15_10_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
+  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
+
+  /* USER CODE END EXTI15_10_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */
