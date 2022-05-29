@@ -35,6 +35,7 @@
 #include "LEDTask.h"
 #include "VoiceTask.h"
 #include "Utils.h"
+#include <stdbool.h>
 
 /* USER CODE END Includes */
 
@@ -54,17 +55,18 @@
 
 /* Private variables ---------------------------------------------------------*/
 #ifndef TEST
+TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_usart1_rx;
-TIM_HandleTypeDef htim6;
-#endif
 
-//osThreadId defaultTaskHandle;
+osThreadId defaultTaskHandle;
+#endif
 /* USER CODE BEGIN PV */
 TaskHandle_t xHandle_LED;
 TaskHandle_t xHandle_LEDToggle;
 TaskHandle_t xHandle_VoiceTask;
+static BaseType_t checkIfYieldRequired=pdFALSE;
 
 uint8_t UART1_RxBuf[40];
 uint8_t MainBuf[40];
@@ -74,9 +76,9 @@ uint8_t MainBuf[40];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM6_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -118,10 +120,12 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
+  //HAL_TIM_Base_Start(&htim6);
+  HAL_TIM_Base_Start_IT(&htim6);
 
   /* USER CODE END 2 */
 
@@ -157,8 +161,6 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   LED_Init();
-
-  HAL_TIM_Base_Start_IT(&htim6);
 
   Power_On(); // Power on the SIM808 shield
 
@@ -240,6 +242,44 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 19;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 31999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -306,22 +346,6 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -347,32 +371,32 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : PB13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 13, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
 /* USER CODE BEGIN 4 */
 
-static uint8_t oldPos=0, newPos=0;
+/*static uint8_t oldPos=0, newPos=0;
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
 
 	if (huart->Instance == USART1)
 	{
-		uint8_t MainBuf_SIZE=sizeof(MainBuf);
+
+		memset(MainBuf,'\0',40);
+		memcpy ((uint8_t *)MainBuf, UART1_RxBuf, Size);
+		memset(UART1_RxBuf,'\0',40);
+		/*uint8_t MainBuf_SIZE=sizeof(MainBuf);
 		oldPos = newPos;  // Update the last position before copying new data
 
-		/* If the data in large and it is about to exceed the buffer size, we have to route it to the start of the buffer
-		 * This is to maintain the circular buffer
-		 * The old data in the main buffer will be overlapped
-		 */
+		// If the data in large and it is about to exceed the buffer size, we have to route it to the start of the buffer
+		// This is to maintain the circular buffer
+		// The old data in the main buffer will be overlapped
+
 		if (oldPos+(uint8_t)Size > MainBuf_SIZE)  // If the current position + new data size is greater than the main buffer
 		{
 			uint8_t datatocopy = MainBuf_SIZE-oldPos;  // find out how much space is left in the main buffer
@@ -383,9 +407,9 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 			newPos = (Size-datatocopy);
 		}
 
-		/* if the current position + new data size is less than the main buffer
-		 * we will simply copy the data into the buffer and update the position
-		*/
+		// if the current position + new data size is less than the main buffer
+		// we will simply copy the data into the buffer and update the position
+
 		else
 		{
 			memcpy ((uint8_t *)MainBuf+oldPos, UART1_RxBuf, Size);
@@ -393,19 +417,33 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 		}
 
 
-		/* start the DMA again */
+		// start the DMA again
 		HAL_UARTEx_ReceiveToIdle_DMA(&huart2, (uint8_t *) UART1_RxBuf, sizeof(UART1_RxBuf));
 		__HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
 	}
-}
+}*/
 
 //extern TaskHandle_t xHandle_LED;
-static uint32_t PrevTimer=0, Timer;
-static GPIO_PinState ButtonState=GPIO_PIN_RESET;
-static BaseType_t checkIfYieldRequired=pdFALSE;
+//static uint32_t PrevTick, Tick, PressCount=0;
+//static GPIO_PinState ButtonState=GPIO_PIN_RESET;
+//static BaseType_t checkIfYieldRequired=pdFALSE;
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+/*void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	if(GPIO_Pin==GPIO_PIN_13){
+		if(PressCount==0) PrevTick=HAL_GetTick();
+
+		if(PressCount==1 && (HAL_GetTick()-PrevTick)>=0){
+			checkIfYieldRequired=xTaskResumeFromISR(xHandle_LED);
+			portYIELD_FROM_ISR(checkIfYieldRequired);
+
+			PressCount=0;
+			PrevTick=HAL_GetTick();
+		}
+		PressCount++;
+	}*/
+
+	/*HAL_UART_Transmit(&huart2,"I'm in EXTI Callback !!!\r\n",27,100);
 	if(GPIO_Pin==GPIO_PIN_13){
 		if(PrevTimer==0 && ButtonState==GPIO_PIN_RESET){
 			PrevTimer=Timer=HAL_GetTick();
@@ -415,13 +453,27 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		Timer=HAL_GetTick();
 
 		if((Timer-PrevTimer)>=135 && ButtonState==GPIO_PIN_SET ){
+			HAL_UART_Transmit(&huart2,"EXTI Callback : Timer=135 !!!\r\n",32,100);
 			checkIfYieldRequired=xTaskResumeFromISR(xHandle_LED);
 			portYIELD_FROM_ISR(checkIfYieldRequired);
 
 			PrevTimer=Timer=0;
 			ButtonState=GPIO_PIN_RESET;
 		}
-	}
+	}*/
+//}
+
+static GPIO_PinState ButtonStatus, PrevButtonStatus=GPIO_PIN_RESET;
+
+GPIO_PinState GetButtonStatus(void)
+{
+
+	ButtonStatus=HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_13);
+
+	if(PrevButtonStatus!=ButtonStatus) PrevButtonStatus=ButtonStatus;
+	else return ButtonStatus;
+
+	return HAL_OK;
 }
 
 /* USER CODE END 4 */
@@ -473,7 +525,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-
+	//HAL_UART_Transmit(&huart2,"I'm in Error_Handler() !!!\r\n",30,100);
   /* USER CODE END Error_Handler_Debug */
 }
 

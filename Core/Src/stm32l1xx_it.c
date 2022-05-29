@@ -23,7 +23,11 @@
 #include "stm32l1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "cmsis_os.h"
+#include "stm32l1xx_hal_uart.h"
+#include "stm32l1xx_hal_gpio.h"
+#include "LED.h"
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,15 +47,15 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-extern DMA_HandleTypeDef hdma_usart1_rx;
-extern TIM_HandleTypeDef htim3;
-extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern TaskHandle_t xHandle_LED;
+static BaseType_t checkIfYieldRequired=pdFALSE;
+extern  GPIO_PinState ButtonStatus, PrevButtonStatus=GPIO_PIN_RESET;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
-
+extern GPIO_PinState GetButtonStatus(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -60,6 +64,8 @@ extern UART_HandleTypeDef huart2;
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN EV */
 
@@ -163,20 +169,6 @@ void DebugMon_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles DMA1 channel5 global interrupt.
-  */
-void DMA1_Channel5_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
-
-  /* USER CODE END DMA1_Channel5_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_rx);
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
-
-  /* USER CODE END DMA1_Channel5_IRQn 1 */
-}
-
-/**
   * @brief This function handles TIM3 global interrupt.
   */
 void TIM3_IRQHandler(void)
@@ -191,45 +183,23 @@ void TIM3_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles USART1 global interrupt.
+  * @brief This function handles TIM6 global interrupt.
   */
-void USART1_IRQHandler(void)
+void TIM6_IRQHandler(void)
 {
-  /* USER CODE BEGIN USART1_IRQn 0 */
-
-  /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
-  /* USER CODE BEGIN USART1_IRQn 1 */
-
-  /* USER CODE END USART1_IRQn 1 */
-}
-
-/**
-  * @brief This function handles USART2 global interrupt.
-  */
-void USART2_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART2_IRQn 0 */
-
-  /* USER CODE END USART2_IRQn 0 */
-  HAL_UART_IRQHandler(&huart2);
-  /* USER CODE BEGIN USART2_IRQn 1 */
-
-  /* USER CODE END USART2_IRQn 1 */
-}
-
-/**
-  * @brief This function handles EXTI line[15:10] interrupts.
-  */
-void EXTI15_10_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
-
-  /* USER CODE END EXTI15_10_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
-  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
-
-  /* USER CODE END EXTI15_10_IRQn 1 */
+  /* USER CODE BEGIN TIM6_IRQn 0 */
+static bool StatusFlag=false;
+  /* USER CODE END TIM6_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim6);
+  /* USER CODE BEGIN TIM6_IRQn 1 */
+  if(GetButtonStatus()==GPIO_PIN_SET ){
+	  if(StatusFlag==false){
+		  checkIfYieldRequired=xTaskResumeFromISR(xHandle_LED);
+		  portYIELD_FROM_ISR(checkIfYieldRequired);
+		  StatusFlag=true;
+	  }
+  }else StatusFlag=false;
+  /* USER CODE END TIM6_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

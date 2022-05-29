@@ -24,9 +24,10 @@ STATUS_T ReturnStatus=STATUS_OK;
 
 void prvLEDTask   ( void *pvParameters )
 {
+
 	vTaskSuspend(NULL);
 
-	//LEDParam=*((uint16_t *)pvParameters);
+	//HAL_UART_Transmit(&huart2,"I'm in LEDTask !!!\r\n",21,100);
 
 	while(1){
 		CallCount++;
